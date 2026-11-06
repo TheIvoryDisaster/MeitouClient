@@ -688,6 +688,19 @@ public sealed partial class PopulationSystem : IStateHashed
     }
 
     /// <summary>
+    /// Queues <paramref name="campaignId"/> for <paramref name="faction"/> against <paramref name="target"/>, due after <paramref name="delayHours"/> game hours: the request
+    /// path a DIALOGUE_LINE's <c>trigger campaign</c> takes (<see cref="Queue"/>: its <c>faction override</c> hand-over, home and duplicate rules), for code mods. Serial phases
+    /// only. Returns whether it was queued; the start then follows the request rules (world states and leader only).
+    /// </summary>
+    public bool RequestCampaign(World world, int faction, string campaignId, CampaignTown target, float delayHours = 0)
+    {
+        EnsureWars(world);
+        if (WarOf(faction) is not { } m || CampaignOf(campaignId) is not { } c || target.IsNone || !Exists(world, target)) return false;
+        float delay = Math.Max(0, delayHours);
+        return Queue(world, m, c, target, CampaignTown.None, FactionOfTown(world, target), delay, delay, world.GameHours, callerFlag: true);
+    }
+
+    /// <summary>
     /// Dialogue's DA 37 ASSAULT_PHASE / DA 38 RETREAT_PHASE (<c>FUN_140680560</c>, <b>Verified</b>): the campaign the speaker's squad marches in goes to phase 1 (2 when it has no
     /// <c>pt2</c> leader package) or 2, its phase clock restarting. DA 39 (phase 3, which no phase handles; the data never uses it) is not built. Returns whether a campaign changed.
     /// </summary>

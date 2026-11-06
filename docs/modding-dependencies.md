@@ -89,6 +89,8 @@ public void Initialize(ModContext c)
 
 ## Writing a framework (pattern for modders and agents)
 
+Worked example: [Rivalry Core](modding-rivalry.md).
+
 - Put the public surface in one assembly listed in `assemblies`; keep helpers others must not bind to `internal` or in a private DLL.
 - Expose an interface (`IRivalryApi`) implemented by the entry type, so dependents call `c.Dependency<IRivalryApi>(...)` and the
   framework can change its classes freely.

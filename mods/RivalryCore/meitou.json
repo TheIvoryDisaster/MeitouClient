@@ -1,0 +1,7 @@
+{
+  "id": "rivalry.core",
+  "version": "0.1.0",
+  "apiVersion": 2,
+  "assemblies": ["RivalryCore.dll"],
+  "entry": "Rivalry.RivalryMod"
+}
