@@ -6,26 +6,50 @@ namespace Meitou.Content;
 /// A code mod's <c>meitou.json</c> beside its <c>.mod</c> (docs/modding.md "Discovery"): <c>id</c> (letters, digits, <c>. _ -</c>; keys its save data and its Harmony
 /// instance), <c>apiVersion</c> (the code-mod API it was built for), <c>assemblies</c> (DLL file names in the mod folder, loaded in order) and <c>entry</c> (the full name of
 /// its <c>IMod</c> type). Optional since API 2 (docs/modding.md "Dependencies"): <c>version</c> (the mod's own <see cref="CodeModVersion"/>) and <c>dependencies</c> (other code
-/// mods by id, each with an optional version range and <c>optional</c> flag).
+/// mods by id, each with an optional version range and <c>optional</c> flag), plus <c>loadAfter</c>, <c>incompatible</c> and <c>gameVersion</c>
+/// (CodeModManifest.Ordering.cs).
 /// </summary>
-public sealed record CodeModManifest(string Id, int ApiVersion, IReadOnlyList<string> Assemblies, string Entry,
-    CodeModVersion? Version = null, IReadOnlyList<CodeModDependency>? Dependencies = null)
+public sealed partial record CodeModManifest(string Id, int ApiVersion, IReadOnlyList<string> Assemblies, string Entry,
+    CodeModVersion? Version, IReadOnlyList<CodeModDependency>? Dependencies)
 {
+    /// <summary>The API 1 constructor, kept so mods compiled against API 1 still bind to it (docs/modding-dependencies.md "Compatibility").</summary>
+    public CodeModManifest(string Id, int ApiVersion, IReadOnlyList<string> Assemblies, string Entry)
+        : this(Id, ApiVersion, Assemblies, Entry, null, null)
+    {
+    }
+
+    /// <summary>The API 1 deconstruction (four parts), kept beside the generated six-part one for mods compiled against API 1.</summary>
+    public void Deconstruct(out string Id, out int ApiVersion, out IReadOnlyList<string> Assemblies, out string Entry)
+    {
+        Id = this.Id;
+        ApiVersion = this.ApiVersion;
+        Assemblies = this.Assemblies;
+        Entry = this.Entry;
+    }
+
     /// <summary>The declared dependencies, in manifest order; empty when the manifest has none.</summary>
     public IReadOnlyList<CodeModDependency> DependsOn => Dependencies ?? [];
 
-    /// <summary>Reads a manifest; throws <see cref="InvalidDataException"/> with the reason when it is not a valid one.</summary>
+    /// <summary>
+    /// Reads a manifest; throws <see cref="InvalidDataException"/> with the reason when it is not a valid one, or <see cref="IOException"/> /
+    /// <see cref="UnauthorizedAccessException"/> when the file cannot be read. Every field is checked for its JSON kind before it is read.
+    /// </summary>
     public static CodeModManifest Read(string path)
     {
+        var options = new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true };
         try
         {
-            var options = new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true };
             using var json = JsonDocument.Parse(File.ReadAllBytes(path), options);
             return FromJson(json.RootElement);
         }
         catch (JsonException e)
         {
             throw new InvalidDataException($"{ModList.CodeManifestFile} is not valid JSON: {e.Message}", e);
+        }
+        catch (InvalidOperationException e)
+        {
+            // A JsonElement read of the wrong kind; the field checks should make this unreachable, but it stays a malformed manifest, not a crash.
+            throw new InvalidDataException($"{ModList.CodeManifestFile} has a field of the wrong kind: {e.Message}", e);
         }
     }
 
@@ -34,10 +58,14 @@ public sealed record CodeModManifest(string Id, int ApiVersion, IReadOnlyList<st
         if (root.ValueKind != JsonValueKind.Object) throw new InvalidDataException($"{ModList.CodeManifestFile} must hold an object");
         string id = Text(root, "id");
         if (!IsValidId(id)) throw new InvalidDataException($"id '{id}': use letters, digits, '.', '_' and '-', starting with a letter or digit");
-        if (!root.TryGetProperty("apiVersion", out var api) || !api.TryGetInt32(out int apiVersion))
-            throw new InvalidDataException("apiVersion: a whole number is needed");
+        int apiVersion = WholeNumber(root, "apiVersion");
         string entry = Text(root, "entry");
-        return new CodeModManifest(id, apiVersion, ReadAssemblies(root), entry, ReadVersion(root), ReadDependencies(root, id));
+        return new CodeModManifest(id, apiVersion, ReadAssemblies(root), entry, ReadVersion(root), ReadDependencies(root, id))
+        {
+            LoadAfter = ReadLoadAfter(root, id),
+            Incompatible = ReadIncompatible(root, id),
+            GameVersion = ReadGameVersion(root),
+        };
     }
 
     static CodeModVersion? ReadVersion(JsonElement root)
@@ -61,6 +89,13 @@ public sealed record CodeModManifest(string Id, int ApiVersion, IReadOnlyList<st
             dependencies.Add(dependency);
         }
         return dependencies;
+    }
+
+    static int WholeNumber(JsonElement root, string name)
+    {
+        if (!root.TryGetProperty(name, out var value) || value.ValueKind != JsonValueKind.Number || !value.TryGetInt32(out int number))
+            throw new InvalidDataException($"{name}: a whole number is needed, such as 2 (not \"2\")");
+        return number;
     }
 
     static string Text(JsonElement root, string name)
@@ -95,31 +130,34 @@ public sealed record CodeModManifest(string Id, int ApiVersion, IReadOnlyList<st
 /// </summary>
 public sealed record CodeModDependency(string Id, CodeModVersionRange? Range = null, bool Optional = false)
 {
-    internal static CodeModDependency FromJson(JsonElement item)
+    internal static CodeModDependency FromJson(JsonElement item, string key = "dependencies")
     {
-        if (item.ValueKind == JsonValueKind.String) return new CodeModDependency(CheckedId(item.GetString()));
-        if (item.ValueKind != JsonValueKind.Object) throw new InvalidDataException($"dependencies: '{item}' is neither an id nor an object");
-        string id = CheckedId(item.TryGetProperty("id", out var idValue) && idValue.ValueKind == JsonValueKind.String ? idValue.GetString() : null);
-        CodeModVersionRange? range = null;
-        if (item.TryGetProperty("version", out var version))
-        {
-            if (version.ValueKind != JsonValueKind.String)
-                throw new InvalidDataException($"dependencies: {id}'s version must be a string such as \">=1.2.0 <2.0.0\"");
-            try { range = CodeModVersionRange.Parse(version.GetString()!); }
-            catch (InvalidDataException e) { throw new InvalidDataException($"dependencies: {id}: {e.Message}", e); }
-        }
-        bool optional = item.TryGetProperty("optional", out var flag) && flag.ValueKind switch
+        if (item.ValueKind == JsonValueKind.String) return new CodeModDependency(CheckedId(item.GetString(), key));
+        if (item.ValueKind != JsonValueKind.Object) throw new InvalidDataException($"{key}: '{item}' is neither an id nor an object");
+        string id = CheckedId(item.TryGetProperty("id", out var idValue) && idValue.ValueKind == JsonValueKind.String ? idValue.GetString() : null, key);
+        return new CodeModDependency(id, ReadRange(item, id, key), ReadOptional(item, id, key));
+    }
+
+    static CodeModVersionRange? ReadRange(JsonElement item, string id, string key)
+    {
+        if (!item.TryGetProperty("version", out var version)) return null;
+        if (version.ValueKind != JsonValueKind.String)
+            throw new InvalidDataException($"{key}: {id}'s version must be a string such as \">=1.2.0 <2.0.0\"");
+        try { return CodeModVersionRange.Parse(version.GetString()!); }
+        catch (InvalidDataException e) { throw new InvalidDataException($"{key}: {id}: {e.Message}", e); }
+    }
+
+    static bool ReadOptional(JsonElement item, string id, string key) =>
+        item.TryGetProperty("optional", out var flag) && flag.ValueKind switch
         {
             JsonValueKind.True => true,
             JsonValueKind.False => false,
-            _ => throw new InvalidDataException($"dependencies: {id}'s optional must be true or false"),
+            _ => throw new InvalidDataException($"{key}: {id}'s optional must be true or false"),
         };
-        return new CodeModDependency(id, range, optional);
-    }
 
-    static string CheckedId(string? id)
+    static string CheckedId(string? id, string key)
     {
-        if (id is null || !CodeModManifest.IsValidId(id)) throw new InvalidDataException($"dependencies: '{id}' is not a mod id");
+        if (id is null || !CodeModManifest.IsValidId(id)) throw new InvalidDataException($"{key}: '{id}' is not a mod id");
         return id;
     }
 
