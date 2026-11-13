@@ -184,11 +184,12 @@ jobs:
 
   # Copies the zips to the repository's Azure debug container (azure-infra: lifecycle deletes them after 3 days), at
   # <run id>/<attempt>/ so a rerun never overwrites. Signs in by GitHub OIDC to the meitouclient-debug-upload managed identity, whose
-  # federated credential trusts only master (subject repo:<owner>/<repo>:ref:refs/heads/master), so it runs only for master.
+  # federated credential trusts only the fork's `fork` branch (subject repo:TheIvoryDisaster/MeitouClient:ref:refs/heads/fork), so it
+  # runs only there. Fork-only: `fork` is upstream plus this; `master` mirrors VlcekM/MeitouClient, so upstream PRs never carry it.
   # Independent of the release: an upload failure doesn't stop the release, and the release doesn't wait for the upload.
   upload-debug:
     needs: [version, package]
-    if: github.ref == 'refs/heads/master'
+    if: github.repository == 'TheIvoryDisaster/MeitouClient' && github.ref == 'refs/heads/fork'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -226,9 +227,11 @@ jobs:
             echo "- \`${DEBUG_CONTAINER}/${prefix}/$(basename "$zip")\`" >> "$GITHUB_STEP_SUMMARY"
           done
 
-  # The day's first nightly becomes a benchmark target (bench/README.md).
+  # The day's first nightly becomes a benchmark target (bench/README.md). Upstream only: it commits to master, which in the fork is a
+  # clean mirror of upstream.
   bench-target:
     needs: [version, release]
+    if: github.repository == 'VlcekM/MeitouClient'
     permissions:
       contents: write
       actions: write
@@ -237,9 +240,10 @@ jobs:
       tag: v${{ needs.version.outputs.version }}
 
   # Redraws the README's contributors panel (.github/scripts/contributors.mjs) after each release, Claude Haiku naming new contributors' areas;
-  # committed only when it changed.
+  # committed only when it changed. Upstream only, like bench-target: it commits to master.
   contributors:
     needs: release
+    if: github.repository == 'VlcekM/MeitouClient'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5

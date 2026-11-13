@@ -1,5 +1,5 @@
 # Temporary: checks the Azure debug upload (variables, GitHub OIDC sign-in, container access) without building, by uploading a small
-# text file the same way nightly.yml's upload-debug job uploads the zips. Run it by hand from master; delete it once it passes.
+# text file the same way nightly.yml's upload-debug job uploads the zips. Run it by hand from the fork's `fork` branch; delete it once it passes.
 name: Azure upload test
 
 on:
@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   upload:
-    if: github.ref == 'refs/heads/master'
+    if: github.repository == 'TheIvoryDisaster/MeitouClient' && github.ref == 'refs/heads/fork'
     runs-on: ubuntu-latest
     permissions:
       contents: read
