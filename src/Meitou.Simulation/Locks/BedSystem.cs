@@ -97,7 +97,8 @@ public sealed class BedSettings
 /// gets up (<see cref="FixtureRegistry.LeaveBed"/>), as the original's 258 never completes and an order replaces it.</item>
 /// <item><b>Put in bed</b> (<see cref="PutInBedOrder"/>, and the job 106 "Find and put in bed" for a carried friend): the carrier walks there, pays
 /// (the cheaper of its own and the body's rent, <c>FUN_140358170</c>), lets go and the body lies in the bed (<c>FUN_140358670</c>).</item>
-/// <item><b>Rent</b> (<see cref="Cost"/>): only the player's characters pay; refused for a bed that is not theirs to use.</item>
+/// <item><b>Rent</b> (<see cref="Cost"/>): only the player's characters pay; refused for a bed that is not theirs to use. A code mod may price the
+/// player's beds for NPCs (<see cref="PlayerBedRent"/>, engine API).</item>
 /// </list>
 /// The player's own beds become bed fixtures when their buildings register (<see cref="FixtureRegistry.RegisterPlayerBuilding"/>, by the lock
 /// system).
@@ -113,6 +114,13 @@ public sealed class BedSystem(PopulationData data, BedSettings? settings = null)
     /// Lets a carrier put its body down (null: no carrying, so no laying in).
     /// </summary>
     public Carrying.CarrySystem? Carry { get; set; }
+    /// <summary>
+    /// A code mod's rent for the player's beds (engine API, not in the original): what a character of the faction (third argument) pays for an
+    /// indoor bed of the player's faction, -1 when it is not for rent. Null (the default) keeps the original's rules: <see cref="Cost"/> as written
+    /// and no NPC pays. Set, an NPC pays it from its squad's purse to the player (<see cref="Pay"/>) and a visiting NPC's sleep goal may pick such a
+    /// bed (<see cref="RentableBed"/>). AI thinks call it on any thread, so it must only read. One hook: the last mod to set it wins.
+    /// </summary>
+    public Func<World, Fixture, int, int>? PlayerBedRent { get; set; }
 
     /// <summary>
     /// The bed trips under way, in the order they started.
@@ -530,6 +538,7 @@ public sealed class BedSystem(PopulationData data, BedSettings? settings = null)
     {
         int owner = bed.Owner;
         if (owner < 0 || owner == faction || !bed.Indoors) return 0;
+        if (owner == world.Player.Faction && PlayerBedRent is { } rent) return rent(world, bed, faction);
         if (owner < data.Factions.Count && data.Factions[owner].NotReal) return 0;
         if (data.Relations.Contains(owner) && data.Relations.Contains(faction) && data.Relations.IsAlly(owner, faction))
             return 0;
@@ -603,14 +612,15 @@ public sealed class BedSystem(PopulationData data, BedSettings? settings = null)
 
     /// <summary>
     /// The rent paid by the character in <paramref name="slot"/> (the original's <c>FUN_1403576c0</c>, <b>Observed</b>); only the player's characters
-    /// pay. -1: "This isn't mine", refused. Above 0: free when the player's faction paid for this bed less than <see cref="BedSettings.RentHours"/>
+    /// pay, and an NPC in a bed of the player's while <see cref="PlayerBedRent"/> is set (<see cref="PayAsNpc"/>). -1: "This isn't mine", refused. Above 0: free when the player's faction paid for this bed less than <see cref="BedSettings.RentHours"/>
     /// ago; else "Can't afford c.{1} for bed rental." and refused, or the money is paid with "Paid c.{1} for bed rental.". True when the bed may be
     /// used.
     /// </summary>
     public bool Pay(World world, int slot, Fixture bed, int cost)
     {
         var table = world.Characters;
-        if (table.Cold(slot) is not { IsPlayer: true } || cost == 0) return true;
+        if (table.Cold(slot) is not { } payer || cost == 0) return true;
+        if (!payer.IsPlayer) return PayAsNpc(world, payer, bed, cost);
         if (cost < 0)
         {
             world.Bark(table.IdOf(slot), Loc.Tr("This isn't mine"));
@@ -628,6 +638,49 @@ public sealed class BedSystem(PopulationData data, BedSettings? settings = null)
         _paid[bed.Id] = world.GameHours;
         world.Post(Loc.Tr("Paid c.{1} for bed rental.", cost));
         return true;
+    }
+
+    /// <summary>
+    /// An NPC's rent for a bed of the player's faction (engine API with <see cref="PlayerBedRent"/>): free as in the original without the hook or for
+    /// any other bed; else refused when the bed is not for rent or the squad's purse is short, or paid from the purse to the player's money, each
+    /// time the NPC lies down (engine choice).
+    /// </summary>
+    bool PayAsNpc(World world, CharacterCold payer, Fixture bed, int cost)
+    {
+        if (PlayerBedRent is null || bed.Owner < 0 || bed.Owner != world.Player.Faction) return true;
+        if (cost < 0 || world.Squads.Find(payer.SquadId) is not { } squad || squad.Money < cost) return false;
+
+        squad.Money -= cost;
+        world.Player.Money += cost;
+        return true;
+    }
+
+    /// <summary>
+    /// The bed a visiting NPC rents for the night (engine API with <see cref="PlayerBedRent"/>; the AI's sleep goal asks it first): with the hook set,
+    /// the nearest free, reachable BF_BED bed of the player's faction within <see cref="FixtureRegistry.BedSearchRange"/> whose rent for the
+    /// character's faction is above 0 and within its squad's purse. Null without the hook, for the player's characters, or when none is found.
+    /// </summary>
+    public Fixture? RentableBed(World world, int slot)
+    {
+        var table = world.Characters;
+        int player = world.Player.Faction;
+        if (PlayerBedRent is null || player < 0 || table.Cold(slot) is not { IsPlayer: false } c || c.Faction == player) return null;
+        if (world.Squads.Find(c.SquadId) is not { } squad) return null;
+
+        var at = table.Next[slot].Position;
+        Fixture? best = null;
+        float bestD = FixtureRegistry.BedSearchRange * FixtureRegistry.BedSearchRange;
+        foreach (var f in world.Fixtures.All)
+        {
+            if (f.Kind != FixtureKind.Bed || f.Bed.Function != Data.World.TownBuildings.BedFunction || f.Owner != player) continue;
+
+            float d2 = Vector3.DistanceSquared(at, f.Position);
+            if (d2 > bestD || !FixtureRegistry.IsFree(table, f) || !world.Fixtures.Reachable(world, f, c.Faction)) continue;
+            if (Cost(world, f, c.Faction) is not (> 0 and var cost) || cost > squad.Money) continue;
+            (best, bestD) = (f, d2);
+        }
+
+        return best;
     }
 
     /// <summary>

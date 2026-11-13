@@ -159,6 +159,13 @@ holds refuses the second mod.
   `ModdingTests`; the page **Observed** drawn (2026-11-04, Windows, Vulkan, `--settings-showcase` changed locally to open it with a scratch group);
   using it in play **Unknown**.
 - **Commands:** a mod's own `SimCommand` types, queued with `Enqueue` and handled in its system's `Inputs`.
+- **World hooks** (engine API, not in the original; serial phases; untested in play): `PopulationSystem.RequestCampaign` queues a
+  FACTION_CAMPAIGN against a town as a dialogue trigger does (the request pass then applies the game's gates); `PopulationSystem.SpawnPlatoon`
+  adds an unloaded platoon of a SQUAD_TEMPLATE in a ring round a point, with a purse, that loads and saves like a roaming one; the
+  `VisitTown` command sends a squad running a wandering trader package to a player town for a stay of N hours (it leaves a town that is not
+  public at once, as any trader); `BedSystem.PlayerBedRent` prices the player's indoor beds for other factions: set, NPCs pay it from their
+  squad purse to the player when they lie down, and a visitor in a player town picks the nearest bed it can afford before the NPC bed search
+  (null keeps the original: NPCs never pay).
 
 ## Harmony
 

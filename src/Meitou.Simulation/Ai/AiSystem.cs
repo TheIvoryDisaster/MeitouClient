@@ -91,6 +91,13 @@ public sealed record StartContract(int SquadId, string PackageId, float Hours, C
 public sealed record ChangeAi(int SquadId, string PackageId) : SimCommand;
 
 /// <summary>
+/// Sends a wandering trader squad to the player town <see cref="PlayerTown"/> for a stay of <see cref="Hours"/> game hours (engine API for code
+/// mods, not in the original): its next town and stay as the trader's start would pick them. Ignored unless the squad runs a wandering trader
+/// package; it leaves a town that is not public at once, as any trader does.
+/// </summary>
+public sealed record VisitTown(int SquadId, int PlayerTown, float Hours) : SimCommand;
+
+/// <summary>
 /// The AI (docs/simulation.md "AI"; the original's in docs/game/ai.md). Squads whose template lists <c>AI packages</c> get a <see cref="Blackboard"/>
 /// that picks the package by slot and package class; each member thinks on its own cadence: it scores the goals of its role list, its race's <c>AI
 /// Goals</c> and the default idle goal by tier (urgent, then non-urgent, then fluff; the first tier with a positive score wins), weight, hour window,
@@ -1914,10 +1921,12 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
     /// occupier's bed of the town it holds, else the NPC bed search (a free bed of its home building, else of its town). A squad without a town takes
     /// only its own or an ally's beds within <see cref="Locks.FixtureRegistry.BedSearchRange"/>, standing in for the original's allied BF_BED
     /// buildings in the zones around it (engine choice for the range). Null for a home with bed spots (<see cref="SpotFor"/> picks one) or when no
-    /// bed is found.
+    /// bed is found. A visitor in a player town takes a bed it can rent there first (<see cref="Locks.BedSystem.RentableBed"/>; only while a code mod
+    /// prices the player's beds).
     /// </summary>
     Locks.Fixture? SpareBed(World world, Blackboard board, AiMind mind, int slot)
     {
+        if (board.InTown.PlayerTown > 0 && world.SystemOf<Locks.BedSystem>()?.RentableBed(world, slot) is { } rented) return rented;
         if (board.Home is not null && !mind.HomeUnreachable && BedSpotOf(board, mind) is not null) return null;
         if (board.Home is null && !mind.HomeUnreachable && OccupiedBed(world, board, mind, slot) is { } occupied) return occupied;
         if (world.Characters.Cold(slot) is not { } self) return null;
@@ -2210,9 +2219,17 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
                 bed = best;
             }
 
-            if (cold.InSomething == Locks.HeldState.None) world.Fixtures.EnterBed(world, table.IdOf(s), bed);
+            if (cold.InSomething != Locks.HeldState.None || !PaidRent(world, s, cold, bed)) continue;
+            world.Fixtures.EnterBed(world, table.IdOf(s), bed);
         }
     }
+
+    /// <summary>
+    /// The rent of a bed an NPC lies down in (<see cref="Locks.BedSystem.Pay"/>): free unless a code mod set
+    /// <see cref="Locks.BedSystem.PlayerBedRent"/> and the bed is the player's. False when it may not lie there.
+    /// </summary>
+    static bool PaidRent(World world, int slot, CharacterCold cold, Locks.Fixture bed) =>
+        world.SystemOf<Locks.BedSystem>() is not { } beds || beds.Pay(world, slot, bed, beds.Cost(world, bed, cold.Faction));
 
     #endregion
 
@@ -2230,6 +2247,12 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
     {
         foreach (var command in commands)
         {
+            if (command is VisitTown visit)
+            {
+                Visit(world, visit);
+                continue;
+            }
+
             var (squadId, packageId) = command switch
             {
                 StartContract s => (s.SquadId, s.PackageId),
@@ -2247,6 +2270,19 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             if (command is StartContract c) squad.Ai!.StartContract(package, world.GameHours, c.Hours, _rules, c.Target);
             else squad.Ai!.Replace(package, _rules);
         }
+    }
+
+    /// <summary>
+    /// A <see cref="VisitTown"/>: the trader's next town is the player town and its stay the given hours, from state 0 (on the way).
+    /// </summary>
+    static void Visit(World world, VisitTown visit)
+    {
+        if (world.Squads.Find(visit.SquadId) is not { Ai: { CurrentClass: PackageClass.WanderingTrader } board }) return;
+        if (world.Buildings.FindTown(visit.PlayerTown) is null) return;
+
+        board.Destination = CampaignTown.OfPlayer(visit.PlayerTown);
+        board.TraderWait = Math.Max(0, visit.Hours);
+        board.TraderState = 0;
     }
 
     /// <summary>

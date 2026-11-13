@@ -1284,4 +1284,71 @@ public sealed partial class PopulationSystem
     }
 
     #endregion
+
+    #region Code-mod spawns
+
+    /// <summary>
+    /// Placement tries of a code mod's platoon (<see cref="SpawnPlatoon"/>; engine choice, as a campaign squad's 8).
+    /// </summary>
+    const int ModPlaceTries = 8;
+
+    /// <summary>
+    /// A code mod's spawn (engine API, not in the original): an unloaded platoon of the squad template <paramref name="templateId"/> for
+    /// <paramref name="faction"/>, homed at the site <paramref name="homeSite"/>, at a walkable point between <paramref name="minRadius"/> and
+    /// <paramref name="maxRadius"/> of <paramref name="around"/> (<paramref name="around"/> itself when none of the tries is walkable). Its package
+    /// and job come from the template (<see cref="PlatoonJobs.For"/>), so a trader template walks as a trader; it loads like any roaming platoon
+    /// near the player (its squad id is then <see cref="Platoon.SquadId"/>) and is saved with them. Its purse starts at <paramref name="money"/>.
+    /// Returns the platoon id, or -1 for an unknown template, faction or site, or a template that plans no one. Serial phases only.
+    /// </summary>
+    public int SpawnPlatoon(World world, int faction, string templateId, int homeSite, Vector2 around, float minRadius, float maxRadius,
+        long money = 0)
+    {
+        if (faction < 0 || faction >= _data.Factions.Count || homeSite < 0 || homeSite >= _data.Sites.Count) return -1;
+        if (_data.Db.Find(templateId) is not { Type: FcsRecordType.SquadTemplate } record) return -1;
+
+        var template = SquadTemplate.From(record);
+        int id = world.Platoons.NextId();
+        ulong key = Rng.Mix(SeedSalts.ModPlatoon ^ (ulong)id << 8 ^ (ulong)faction << 40);
+        var plan = SquadFactory.Plan(_data.Db, template, _settings.SquadSizeMultiplier, world.Seed, key, States);
+        if (plan.TotalMembers == 0) return -1;
+
+        var (package, job) = PlatoonJobs.For(_data.Ai, template);
+        world.Platoons.Add(new Platoon
+        {
+            Id = id,
+            Origin = homeSite,
+            TemplateId = template.Id,
+            Faction = faction,
+            Key = key,
+            Size = plan.TotalMembers,
+            Position = ModSpot(world, key, around, minRadius, maxRadius),
+            Package = package?.Id,
+            Job = job,
+            Money = Math.Max(0, money),
+        });
+        return id;
+    }
+
+    /// <summary>
+    /// A walkable point in the ring round <paramref name="around"/> (<see cref="SpawnPlatoon"/>): uniform angle and distance, tried
+    /// <see cref="ModPlaceTries"/> times; <paramref name="around"/> when none is walkable.
+    /// </summary>
+    static Vector2 ModSpot(World world, ulong key, Vector2 around, float minRadius, float maxRadius)
+    {
+        float inner = Math.Max(0, Math.Min(minRadius, maxRadius));
+        float outer = Math.Max(inner, maxRadius);
+        for (int k = 0; k < ModPlaceTries; k++)
+        {
+            ulong angleKey = Rng.Hash(world.Seed, key, RngPurpose.Spawn, SeedSalts.ModPlatoonPlace + (ulong)(2 * k));
+            ulong distanceKey = Rng.Hash(world.Seed, key, RngPurpose.Spawn, SeedSalts.ModPlatoonPlace + (ulong)(2 * k + 1));
+            float angle = Rng.Float(angleKey) * MathF.Tau;
+            float distance = inner + Rng.Float(distanceKey) * (outer - inner);
+            var spot = around + distance * new Vector2(MathF.Cos(angle), MathF.Sin(angle));
+            if (world.Walkability.IsWalkable(spot.X, spot.Y)) return spot;
+        }
+
+        return around;
+    }
+
+    #endregion
 }
