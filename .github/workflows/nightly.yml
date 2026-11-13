@@ -182,6 +182,50 @@ jobs:
             Invoke-RestMethod -Uri $env:WEBHOOK -Method Post -ContentType 'application/json; charset=utf-8' -Body $bytes
           }
 
+  # Copies the zips to the repository's Azure debug container (azure-infra: lifecycle deletes them after 3 days), at
+  # <run id>/<attempt>/ so a rerun never overwrites. Signs in by GitHub OIDC to the meitouclient-debug-upload managed identity, whose
+  # federated credential trusts only master (subject repo:<owner>/<repo>:ref:refs/heads/master), so it runs only for master.
+  # Independent of the release: an upload failure doesn't stop the release, and the release doesn't wait for the upload.
+  upload-debug:
+    needs: [version, package]
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: zip-*
+          merge-multiple: true
+          path: out
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Upload to Azure Blob Storage
+        shell: bash
+        env:
+          STORAGE_ACCOUNT: ${{ vars.AZURE_STORAGE_ACCOUNT }}
+          DEBUG_CONTAINER: ${{ vars.AZURE_DEBUG_CONTAINER }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          prefix="${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}"
+          for rid in win-x64 linux-x64 osx-x64 osx-arm64; do
+            zip="out/Meitou-${VERSION}-${rid}.zip"
+            if [ ! -f "$zip" ]; then echo "::error::$zip missing"; exit 1; fi
+            az storage blob upload --auth-mode login --only-show-errors \
+              --account-name "$STORAGE_ACCOUNT" \
+              --container-name "$DEBUG_CONTAINER" \
+              --name "${prefix}/$(basename "$zip")" \
+              --file "$zip"
+            echo "- \`${DEBUG_CONTAINER}/${prefix}/$(basename "$zip")\`" >> "$GITHUB_STEP_SUMMARY"
+          done
+
   # The day's first nightly becomes a benchmark target (bench/README.md).
   bench-target:
     needs: [version, release]
