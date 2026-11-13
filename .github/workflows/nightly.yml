@@ -215,7 +215,7 @@ jobs:
         run: |
           set -euo pipefail
           prefix="${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}"
-          for rid in win-x64 linux-x64 osx-x64 osx-arm64; do
+          for rid in win-x64 linux-x64 osx-x64 osx-arm64 osx-x64-legacy osx-arm64-legacy; do
             zip="out/Meitou-${VERSION}-${rid}.zip"
             if [ ! -f "$zip" ]; then echo "::error::$zip missing"; exit 1; fi
             az storage blob upload --auth-mode login --only-show-errors \
