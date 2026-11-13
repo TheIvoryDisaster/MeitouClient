@@ -167,6 +167,13 @@ holds refuses the second mod.
   trader); `BedSystem.PlayerBedRent` prices the player's indoor beds for other factions: set, an NPC must afford it from its squad purse and
   pays the player once it lies in the bed, and a visitor in a player town picks the nearest bed it can afford before the NPC bed search (null
   keeps the original: NPCs never pay). Non-finite delays, hours, points and radii are refused.
+- **Driving NPCs** (engine API; serial phases; untested in play): `PopulationSystem.HoldPlatoon` stops a roaming platoon's trips and its
+  stand-in's travel (not saved: hold again after a load; it still unloads and despawns as any platoon). `CharacterCold.Engaged` keeps the AI
+  off one member (self-preservation still answers an attack); the mod then drives it with what the engine's own duties use: `TaskStart.Walk`,
+  `CharacterOrders.Sneak` on `Orders` (speed, sight and spot meters follow it for any faction), `LockSystem.Picking.Step` (books the Burglary
+  a witness answers), `CrimeSystem.Pickpocket`, `CarrySystem.BeginPickUp` / `BeginPutDown`, `ArrestSystem.TakeOver(enslave: true)` (a guard
+  takes the carried body to a cage as its faction's slave), `AggroSystem.Spotted` / `Unseen`. `CharacterCold.FedTo` is a free hunger level
+  that comes before the game's rule (not saved), for a captive the mod's squad carries.
 
 ## Harmony
 

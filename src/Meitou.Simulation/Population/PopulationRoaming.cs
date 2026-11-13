@@ -200,7 +200,7 @@ public sealed partial class PopulationSystem
     {
         if (!Kept(p) && (p.ReplacedHome || !Wanted(p))) p.OrphanSeconds += dt;
         else p.OrphanSeconds = 0;
-        if (p.OrphanSeconds <= OrphanLimitSeconds) StandIn(world, p, dt);
+        if (p.OrphanSeconds <= OrphanLimitSeconds && !p.Held) StandIn(world, p, dt);
     }
 
     /// <summary>
@@ -664,6 +664,7 @@ public sealed partial class PopulationSystem
         }
 
         if (p.Pinned || p.Wild || p.Dead) return;   // a town's own or a wild one: its AI runs it, it has no trips (nor has a dead one)
+        if (p.Held) return;   // a code mod runs it (HoldPlatoon)
 
         // A package that travels (the trader, the shipping classes) moves the squad itself: no trip order meanwhile, and the trip starts afresh when
         // it gives way.
@@ -1329,6 +1330,19 @@ public sealed partial class PopulationSystem
             Money = Math.Max(0, money),
         });
         return id;
+    }
+
+    /// <summary>
+    /// A code mod takes over a platoon's movement, or gives it back (engine API, <see cref="Platoon.Held"/>): held, it gets no trip orders and its
+    /// stand-in stays where it is, so the mod can walk its members itself (<see cref="CharacterCold.Engaged"/> keeps the AI off a member; its
+    /// self-preservation still answers an attack). False for an unknown platoon, a town's own or a campaign's. Serial phases only.
+    /// </summary>
+    public static bool HoldPlatoon(World world, int platoon, bool held)
+    {
+        if (world.Platoons.Find(platoon) is not { Pinned: false, Campaign: null } p) return false;
+
+        p.Held = held;
+        return true;
     }
 
     /// <summary>
