@@ -1295,22 +1295,24 @@ public sealed partial class PopulationSystem
     /// <summary>
     /// A code mod's spawn (engine API, not in the original): an unloaded platoon of the squad template <paramref name="templateId"/> for
     /// <paramref name="faction"/>, homed at the site <paramref name="homeSite"/>, at a walkable point between <paramref name="minRadius"/> and
-    /// <paramref name="maxRadius"/> of <paramref name="around"/> (<paramref name="around"/> itself when none of the tries is walkable). Its package
-    /// and job come from the template (<see cref="PlatoonJobs.For"/>), so a trader template walks as a trader; it loads like any roaming platoon
-    /// near the player (its squad id is then <see cref="Platoon.SquadId"/>) and is saved with them. Its purse starts at <paramref name="money"/>.
-    /// Returns the platoon id, or -1 for an unknown template, faction or site, or a template that plans no one. Serial phases only.
+    /// <paramref name="maxRadius"/> of <paramref name="around"/> (<see cref="ModSpot"/>; never outside that ring). Its package and job come from the
+    /// template (<see cref="PlatoonJobs.For"/>), so a trader template walks as a trader; it loads like any roaming platoon near the player (its squad
+    /// id is then <see cref="Platoon.SquadId"/>) and is saved with them. Its purse starts at <paramref name="money"/>. Returns the platoon id, or -1,
+    /// adding nothing, for an unknown template, faction or site, a point or radius that is not finite, a template that plans no one, or a ring with
+    /// no walkable point found. Serial phases only.
     /// </summary>
     public int SpawnPlatoon(World world, int faction, string templateId, int homeSite, Vector2 around, float minRadius, float maxRadius,
         long money = 0)
     {
         if (faction < 0 || faction >= _data.Factions.Count || homeSite < 0 || homeSite >= _data.Sites.Count) return -1;
+        if (!float.IsFinite(around.X) || !float.IsFinite(around.Y) || !float.IsFinite(minRadius) || !float.IsFinite(maxRadius)) return -1;
         if (_data.Db.Find(templateId) is not { Type: FcsRecordType.SquadTemplate } record) return -1;
 
         var template = SquadTemplate.From(record);
         int id = world.Platoons.NextId();
         ulong key = Rng.Mix(SeedSalts.ModPlatoon ^ (ulong)id << 8 ^ (ulong)faction << 40);
         var plan = SquadFactory.Plan(_data.Db, template, _settings.SquadSizeMultiplier, world.Seed, key, States);
-        if (plan.TotalMembers == 0) return -1;
+        if (plan.TotalMembers == 0 || ModSpot(world, key, around, minRadius, maxRadius) is not { } spot) return -1;
 
         var (package, job) = PlatoonJobs.For(_data.Ai, template);
         world.Platoons.Add(new Platoon
@@ -1321,7 +1323,7 @@ public sealed partial class PopulationSystem
             Faction = faction,
             Key = key,
             Size = plan.TotalMembers,
-            Position = ModSpot(world, key, around, minRadius, maxRadius),
+            Position = spot,
             Package = package?.Id,
             Job = job,
             Money = Math.Max(0, money),
@@ -1330,10 +1332,11 @@ public sealed partial class PopulationSystem
     }
 
     /// <summary>
-    /// A walkable point in the ring round <paramref name="around"/> (<see cref="SpawnPlatoon"/>): uniform angle and distance, tried
-    /// <see cref="ModPlaceTries"/> times; <paramref name="around"/> when none is walkable.
+    /// A walkable point in the ring round <paramref name="around"/> (<see cref="SpawnPlatoon"/>; radii below 0 count as 0, a smaller outer one as the
+    /// inner one): uniform angle and distance, tried <see cref="ModPlaceTries"/> times. Null when none is walkable (engine choice: the centre is no
+    /// fallback, as it lies outside a ring with an inner radius).
     /// </summary>
-    static Vector2 ModSpot(World world, ulong key, Vector2 around, float minRadius, float maxRadius)
+    static Vector2? ModSpot(World world, ulong key, Vector2 around, float minRadius, float maxRadius)
     {
         float inner = Math.Max(0, Math.Min(minRadius, maxRadius));
         float outer = Math.Max(inner, maxRadius);
@@ -1347,7 +1350,7 @@ public sealed partial class PopulationSystem
             if (world.Walkability.IsWalkable(spot.X, spot.Y)) return spot;
         }
 
-        return around;
+        return null;
     }
 
     #endregion

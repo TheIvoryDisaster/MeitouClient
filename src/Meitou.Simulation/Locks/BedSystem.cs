@@ -465,9 +465,14 @@ public sealed class BedSystem(PopulationData data, BedSettings? settings = null)
             return false;
         }
 
-        if (!Pay(world, s, bed, Cost(world, bed, c.Faction)) || !world.Fixtures.EnterBed(world, table.IdOf(s), bed))
+        int cost = Cost(world, bed, c.Faction);
+        if (!Pay(world, s, bed, cost) || !world.Fixtures.EnterBed(world, table.IdOf(s), bed))
+        {
             TaskStart.Stand(table, s);
+            return false;
+        }
 
+        SettleNpcRent(world, s, bed, cost);
         return false;
     }
 
@@ -515,7 +520,9 @@ public sealed class BedSystem(PopulationData data, BedSettings? settings = null)
         if (cost != 0 && Cost(world, bed, bc.Faction) is var own and >= 0 && own < cost) cost = own;
         if (!Pay(world, s, bed, cost)) return false;
         Carry!.LetGo(world, s);
-        if (!world.Fixtures.EnterBed(world, body, bed) && c.IsPlayer) world.Post($"{c.Name} could not put {bc.Name} in the bed");
+        if (world.Fixtures.EnterBed(world, body, bed)) SettleNpcRent(world, s, bed, cost);
+        else if (c.IsPlayer) world.Post($"{c.Name} could not put {bc.Name} in the bed");
+
         return false;
     }
 
@@ -612,7 +619,7 @@ public sealed class BedSystem(PopulationData data, BedSettings? settings = null)
 
     /// <summary>
     /// The rent paid by the character in <paramref name="slot"/> (the original's <c>FUN_1403576c0</c>, <b>Observed</b>); only the player's characters
-    /// pay, and an NPC in a bed of the player's while <see cref="PlayerBedRent"/> is set (<see cref="PayAsNpc"/>). -1: "This isn't mine", refused. Above 0: free when the player's faction paid for this bed less than <see cref="BedSettings.RentHours"/>
+    /// pay. An NPC is only checked here (<see cref="MayRentAsNpc"/>) and pays once it lies in the bed (<see cref="SettleNpcRent"/>). -1: "This isn't mine", refused. Above 0: free when the player's faction paid for this bed less than <see cref="BedSettings.RentHours"/>
     /// ago; else "Can't afford c.{1} for bed rental." and refused, or the money is paid with "Paid c.{1} for bed rental.". True when the bed may be
     /// used.
     /// </summary>
@@ -620,7 +627,7 @@ public sealed class BedSystem(PopulationData data, BedSettings? settings = null)
     {
         var table = world.Characters;
         if (table.Cold(slot) is not { } payer || cost == 0) return true;
-        if (!payer.IsPlayer) return PayAsNpc(world, payer, bed, cost);
+        if (!payer.IsPlayer) return MayRentAsNpc(world, payer, bed, cost);
         if (cost < 0)
         {
             world.Bark(table.IdOf(slot), Loc.Tr("This isn't mine"));
@@ -641,19 +648,33 @@ public sealed class BedSystem(PopulationData data, BedSettings? settings = null)
     }
 
     /// <summary>
-    /// An NPC's rent for a bed of the player's faction (engine API with <see cref="PlayerBedRent"/>): free as in the original without the hook or for
-    /// any other bed; else refused when the bed is not for rent or the squad's purse is short, or paid from the purse to the player's money, each
-    /// time the NPC lies down (engine choice).
+    /// Whether an NPC may lie in a bed for its rent (engine API with <see cref="PlayerBedRent"/>): always without the hook or for a bed that is not the
+    /// player's, as in the original; else only when the bed is for rent and the squad's purse holds the rent. Nothing is paid here.
     /// </summary>
-    bool PayAsNpc(World world, CharacterCold payer, Fixture bed, int cost)
+    bool MayRentAsNpc(World world, CharacterCold payer, Fixture bed, int cost)
     {
-        if (PlayerBedRent is null || bed.Owner < 0 || bed.Owner != world.Player.Faction) return true;
-        if (cost < 0 || world.Squads.Find(payer.SquadId) is not { } squad || squad.Money < cost) return false;
+        if (!ChargesNpc(world, bed)) return true;
+        return cost >= 0 && world.Squads.Find(payer.SquadId) is { } squad && squad.Money >= cost;
+    }
+
+    /// <summary>
+    /// Pays an NPC's rent once it (or the body it carried) lies in the bed (engine API with <see cref="PlayerBedRent"/>): from its squad's purse to
+    /// the player's money, each time it lies down (engine choice). Nothing for the player's characters (<see cref="Pay"/> paid already), a bed that
+    /// is not the player's, no hook, a free bed or a purse short of the rent. Serial phases only.
+    /// </summary>
+    public void SettleNpcRent(World world, int slot, Fixture bed, int cost)
+    {
+        if (cost <= 0 || !ChargesNpc(world, bed) || world.Characters.Cold(slot) is not { IsPlayer: false } payer) return;
+        if (world.Squads.Find(payer.SquadId) is not { } squad || squad.Money < cost) return;
 
         squad.Money -= cost;
         world.Player.Money += cost;
-        return true;
     }
+
+    /// <summary>
+    /// Whether NPCs pay for the bed: <see cref="PlayerBedRent"/> is set and the bed is the player's faction's.
+    /// </summary>
+    bool ChargesNpc(World world, Fixture bed) => PlayerBedRent is not null && bed.Owner >= 0 && bed.Owner == world.Player.Faction;
 
     /// <summary>
     /// The bed a visiting NPC rents for the night (engine API with <see cref="PlayerBedRent"/>; the AI's sleep goal asks it first): with the hook set,

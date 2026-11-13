@@ -1210,10 +1210,12 @@ public sealed partial class PopulationSystem : IStateHashed
     /// A code mod's campaign request (engine API, not in the original): queues <paramref name="campaignId"/> for <paramref name="faction"/> against
     /// <paramref name="target"/>, due after <paramref name="delayHours"/>, as a dialogue trigger does, so the request pass applies the game's own
     /// gates (chance, cooldown, range, population) when it falls due. False when the faction has no war manager, the campaign or the town is
-    /// unknown. Serial phases only.
+    /// unknown, or the delay is not finite. Serial phases only.
     /// </summary>
     public bool RequestCampaign(World world, int faction, string campaignId, CampaignTown target, float delayHours = 0)
     {
+        if (!float.IsFinite(delayHours)) return false;
+
         EnsureWars(world);
         if (WarOf(faction) is not { } m || CampaignOf(campaignId) is not { } c) return false;
         if (target.IsNone || !Exists(world, target)) return false;

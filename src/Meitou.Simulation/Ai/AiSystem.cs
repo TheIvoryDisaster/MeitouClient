@@ -92,8 +92,9 @@ public sealed record ChangeAi(int SquadId, string PackageId) : SimCommand;
 
 /// <summary>
 /// Sends a wandering trader squad to the player town <see cref="PlayerTown"/> for a stay of <see cref="Hours"/> game hours (engine API for code
-/// mods, not in the original): its next town and stay as the trader's start would pick them. Ignored unless the squad runs a wandering trader
-/// package; it leaves a town that is not public at once, as any trader does.
+/// mods, not in the original): its next town and stay as the trader's start would pick them; the stay counts from its first step in that town
+/// after the command, also when it is there already. Ignored unless the squad runs a wandering trader package, or for hours that are not finite;
+/// it leaves a town that is not public at once, as any trader does.
 /// </summary>
 public sealed record VisitTown(int SquadId, int PlayerTown, float Hours) : SimCommand;
 
@@ -2219,17 +2220,23 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
                 bed = best;
             }
 
-            if (cold.InSomething != Locks.HeldState.None || !PaidRent(world, s, cold, bed)) continue;
-            world.Fixtures.EnterBed(world, table.IdOf(s), bed);
+            if (cold.InSomething == Locks.HeldState.None) EnterRentedBed(world, s, cold, bed);
         }
     }
 
     /// <summary>
-    /// The rent of a bed an NPC lies down in (<see cref="Locks.BedSystem.Pay"/>): free unless a code mod set
-    /// <see cref="Locks.BedSystem.PlayerBedRent"/> and the bed is the player's. False when it may not lie there.
+    /// Lies an NPC in a bed for its rent: free unless a code mod set <see cref="Locks.BedSystem.PlayerBedRent"/> and the bed is the player's; then
+    /// it must afford the rent (<see cref="Locks.BedSystem.Pay"/>) and pays only once it lies there (<see cref="Locks.BedSystem.SettleNpcRent"/>).
     /// </summary>
-    static bool PaidRent(World world, int slot, CharacterCold cold, Locks.Fixture bed) =>
-        world.SystemOf<Locks.BedSystem>() is not { } beds || beds.Pay(world, slot, bed, beds.Cost(world, bed, cold.Faction));
+    static void EnterRentedBed(World world, int slot, CharacterCold cold, Locks.Fixture bed)
+    {
+        var beds = world.SystemOf<Locks.BedSystem>();
+        int cost = beds?.Cost(world, bed, cold.Faction) ?? 0;
+        if (beds is not null && !beds.Pay(world, slot, bed, cost)) return;
+        if (!world.Fixtures.EnterBed(world, world.Characters.IdOf(slot), bed)) return;
+
+        beds?.SettleNpcRent(world, slot, bed, cost);
+    }
 
     #endregion
 
@@ -2273,16 +2280,18 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
     }
 
     /// <summary>
-    /// A <see cref="VisitTown"/>: the trader's next town is the player town and its stay the given hours, from state 0 (on the way).
+    /// A <see cref="VisitTown"/>: the trader's next town is the player town and its stay the given hours, from state 0 (on the way), the stay's clock
+    /// waiting for its arrival.
     /// </summary>
     static void Visit(World world, VisitTown visit)
     {
+        if (!float.IsFinite(visit.Hours) || world.Buildings.FindTown(visit.PlayerTown) is null) return;
         if (world.Squads.Find(visit.SquadId) is not { Ai: { CurrentClass: PackageClass.WanderingTrader } board }) return;
-        if (world.Buildings.FindTown(visit.PlayerTown) is null) return;
 
         board.Destination = CampaignTown.OfPlayer(visit.PlayerTown);
         board.TraderWait = Math.Max(0, visit.Hours);
         board.TraderState = 0;
+        board.VisitArrivalPending = true;
     }
 
     /// <summary>
