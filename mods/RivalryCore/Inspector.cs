@@ -11,7 +11,8 @@ namespace Rivalry;
 /// Builds a <see cref="PlayerReport"/> from the world in a serial step (docs/modding-rivalry.md "Inspection"). Reads only; every walk is in slot, town or
 /// registry order, so the report is the same on any thread count.
 /// </summary>
-public sealed class Inspector(PopulationData data)
+public sealed class Inspector(PopulationData data, IReadOnlyList<(string Name, Func<World, TownReport, double> Read)>? townProbes = null,
+    IReadOnlyList<(string Name, Func<World, CharacterReport, double> Read)>? characterProbes = null)
 {
     /// <summary>Building <c>function</c> numbers the report counts (docs/game/factions-squads-towns.md "Campaigns", town level).</summary>
     public const int ResearchFunction = 3, TurretFunction = 12, GateFunction = 21;
@@ -30,9 +31,49 @@ public sealed class Inspector(PopulationData data)
         if (player < 0) return PlayerReport.Empty with { Tick = world.Tick, GameHours = world.GameHours };
 
         var towns = world.Buildings.Towns.Where(t => t.Owner == player).ToList();
-        var characters = InspectCharacters(world, player, towns);
-        var townReports = towns.Select(t => InspectTown(world, player, t, towns, characters)).ToList();
+        var characters = InspectCharacters(world, player, towns).Select(c => Probed(world, c)).ToList();
+        var townReports = towns.Select(t => Probed(world, InspectTown(world, player, t, towns, characters))).ToList();
         return new PlayerReport(world.Tick, world.GameHours, player, world.Player.Money, characters, townReports, InspectCampaigns(world));
+    }
+
+    /// <summary>
+    /// The character's report with the probes' numbers; a probe that throws reads 0.
+    /// </summary>
+    CharacterReport Probed(World world, CharacterReport report)
+    {
+        if (characterProbes is not { Count: > 0 }) return report;
+
+        var values = new Dictionary<string, double>(StringComparer.Ordinal);
+        foreach (var (name, read) in characterProbes) values[name] = Safe(() => read(world, report));
+        return report with { Values = values };
+    }
+
+    /// <summary>
+    /// The town's report with the probes' numbers; a probe that throws reads 0.
+    /// </summary>
+    TownReport Probed(World world, TownReport report)
+    {
+        if (townProbes is not { Count: > 0 }) return report;
+
+        var values = new Dictionary<string, double>(StringComparer.Ordinal);
+        foreach (var (name, read) in townProbes) values[name] = Safe(() => read(world, report));
+        return report with { Values = values };
+    }
+
+    /// <summary>
+    /// A probe's number, 0 when it throws or is not finite.
+    /// </summary>
+    static double Safe(Func<double> read)
+    {
+        try
+        {
+            double value = read();
+            return double.IsFinite(value) ? value : 0;
+        }
+        catch (Exception)
+        {
+            return 0;
+        }
     }
 
     /// <summary>
@@ -73,7 +114,11 @@ public sealed class Inspector(PopulationData data)
         var (hostiles, threat) = FindHostiles(world, player, town, towns);
         float defence = defenders.Sum(c => c.Strength) + turrets * TurretDefence;
         return new TownReport(town.Number, town.Name, town.Position, town.Radius, buildings, turrets, gates, research, StoredValue(world, player, town, towns),
-            [.. defenders.Select(c => c.Id)], defenders.Count(c => c.Down), defence, hostiles, threat);
+            [.. defenders.Select(c => c.Id)], defenders.Count(c => c.Down), defence, hostiles, threat)
+        {
+            Public = town.Public,
+            Beds = world.Fixtures.All.Count(f => f.Kind == Meitou.Simulation.Locks.FixtureKind.Bed && f.Owner == player && TownAt(towns, f.Position) == town.Number),
+        };
     }
 
     (int Buildings, int Turrets, int Gates, int Research) CountBuildings(World world, int town)

@@ -9,7 +9,7 @@ namespace Rivalry;
 public sealed class RivalryOptions
 {
     [Setting("Inspect every (game hours)", Hint = "How often the world looks at your setup and its directors decide.", Min = 1, Max = 24)]
-    public int AssessEveryHours { get; set; } = 1;
+    public int AssessEveryHours { get; set; } = 2;
 
     [Setting("Allies reinforce raids", Hint = "An allied faction sends help when hostiles in one of your towns outmatch its defenders.")]
     public bool Reinforcements { get; set; } = true;

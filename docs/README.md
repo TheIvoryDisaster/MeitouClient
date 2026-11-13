@@ -30,7 +30,7 @@ Not built, by design: the original's in-game level editor and fog editor (`Kensh
 - [meitou-ui](meitou-ui.md): UI kit for the Meitou UI mode
 - [modding](modding.md): code mods: `meitou.json`, per-mod load context, one game-shipped Harmony, tick anchors, dialogue codes, sidecar saves, UI, F10 rows
 - [modding-dependencies](modding-dependencies.md): code mods building on code mods: versions, `dependencies`, shared assemblies, Arrange
-- [modding-rivalry](modding-rivalry.md): Rivalry Core framework mod: inspects the player's characters, towns and inventories; directors raid, hunt or reinforce
+- [modding-rivalry](modding-rivalry.md): Rivalry Core framework mod: inspects the player's characters, towns and inventories; rules, behaviours and directors raid, hunt, reinforce or visit
 - [native-ui](native-ui.md)
 - [render-clouds](render-clouds.md)
 - [render-distance-benchmark](render-distance-benchmark.md)

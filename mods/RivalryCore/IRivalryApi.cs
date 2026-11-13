@@ -12,10 +12,10 @@ public interface IRivalryApi
     RivalryOptions Options { get; }
 
     /// <summary>
-    /// Adds a director, asked at every assessment of every world after the built-in ones, in the order added. Allowed only before the first world is built
-    /// (during dependents' <c>Initialize</c>). Its <see cref="IDirector.Name"/> must be unique: it keys the director's cooldowns in saves.
+    /// The registrations of the mod <paramref name="modId"/> (the dependent's <c>c.Id</c>): probes, conditions, target kinds, behaviours, rules and
+    /// directors, each named with that id as prefix. Allowed only before the first world is built (during dependents' <c>Initialize</c>).
     /// </summary>
-    void AddDirector(IDirector director);
+    IRivalryRegistry For(string modId);
 
     /// <summary>The framework's state in a world (its report and grudges); null when the world does not run it. Serial steps of that world only.</summary>
     IRivalryState? In(World world);
@@ -43,4 +43,9 @@ public interface IRivalryState
 
     /// <summary>The latest decisions, newest last, as log lines (at most 64).</summary>
     IReadOnlyList<string> History { get; }
+
+    /// <summary>
+    /// The behaviours under way, as lines.
+    /// </summary>
+    IReadOnlyList<string> Runs { get; }
 }

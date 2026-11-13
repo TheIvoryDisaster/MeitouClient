@@ -3,6 +3,7 @@
     <Project Path="launcher/Meitou.Launcher/Meitou.Launcher.csproj" />
   </Folder>
   <Folder Name="/mods/">
+    <Project Path="mods/RivalryCore.Tests/RivalryCore.Tests.csproj" />
     <Project Path="mods/RivalryCore/RivalryCore.csproj" />
   </Folder>
   <Folder Name="/services/">

@@ -6,7 +6,7 @@ namespace Rivalry;
 public sealed partial class RivalrySystem
 {
     /// <summary>The sidecar layout's version (docs/modding-rivalry.md "Save data").</summary>
-    public const int SaveVersion = 1;
+    public const int SaveVersion = 2;
 
     /// <summary>A saved grudge waiting for its character: faction by string id, character by name and record (slots differ after a load).</summary>
     readonly record struct SavedGrudge(string Faction, string Name, string Record, float Value);
@@ -30,6 +30,8 @@ public sealed partial class RivalrySystem
             w.Write(key);
             w.Write(end);
         }
+
+        _runs.Write(_world, w);
     }
 
     void WriteGrudges(BinaryWriter w)
@@ -53,9 +55,9 @@ public sealed partial class RivalrySystem
     {
         using var r = new BinaryReader(stream, Encoding.UTF8, leaveOpen: true);
         int version = r.ReadInt32();
-        if (version != SaveVersion)
+        if (version is < 1 or > SaveVersion)
         {
-            _log($"save data version {version} is not {SaveVersion}; starting fresh");
+            _log($"save data version {version} is not 1 to {SaveVersion}; starting fresh");
             return;
         }
         _nextAssess = r.ReadDouble();
@@ -63,6 +65,9 @@ public sealed partial class RivalrySystem
         _pending = ReadGrudges(r);
         int count = r.ReadInt32();
         for (int i = 0; i < count; i++) _cooldowns.Set(r.ReadString(), r.ReadDouble());
+
+        // Version 2 adds the behaviours under way.
+        if (version >= 2) _runs.Read(r);
     }
 
     static List<SavedGrudge> ReadGrudges(BinaryReader r)

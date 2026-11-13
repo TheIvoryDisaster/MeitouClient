@@ -30,6 +30,11 @@ public sealed record NoticeDecision(string Director, string Message) : Decision(
 /// <summary>Anything else, run in the same serial step: it may change the world as a serial phase may, deterministically.</summary>
 public sealed record CustomDecision(string Director, string Label, Action<World> Apply) : Decision(Director);
 
+/// <summary>
+/// A behaviour starts for a target (<see cref="IRivalryRegistry.AddBehaviour"/>): what a rule decides, and what a director may.
+/// </summary>
+public sealed record StartDecision(string Director, string Behaviour, RuleTarget Target, BehaviourArgs Args) : Decision(Director);
+
 /// <summary>Where one director records its decisions during an assessment; named by the director so cooldowns never collide.</summary>
 public sealed class Decisions
 {
@@ -70,6 +75,12 @@ public sealed class Decisions
     public void Grudge(int faction, CharacterId who, float delta) => _list.Add(new GrudgeDecision(Director, faction, who, delta));
 
     public void Notice(string message) => _list.Add(new NoticeDecision(Director, message));
+
+    /// <summary>
+    /// Starts a behaviour by name for a target.
+    /// </summary>
+    public void Start(string behaviour, RuleTarget target, BehaviourArgs? args = null) =>
+        _list.Add(new StartDecision(Director, behaviour, target, args ?? new BehaviourArgs()));
 
     public void Custom(string label, Action<World> apply) => _list.Add(new CustomDecision(Director, label, apply));
 }

@@ -8,7 +8,7 @@
   <PropertyGroup>
     <AssemblyName>RivalryCore</AssemblyName>
     <RootNamespace>Rivalry</RootNamespace>
-    <Version>0.1.0</Version>
+    <Version>0.2.0</Version>
   </PropertyGroup>
 
   <ItemGroup>
@@ -16,6 +16,10 @@
     <ProjectReference Include="../../src/Meitou.Data/Meitou.Data.csproj" Private="false" />
     <ProjectReference Include="../../src/Meitou.Simulation/Meitou.Simulation.csproj" Private="false" />
     <ProjectReference Include="../../src/Meitou.Game/Meitou.Game.csproj" Private="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="RivalryCore.Tests" />
   </ItemGroup>
 
   <ItemGroup>
