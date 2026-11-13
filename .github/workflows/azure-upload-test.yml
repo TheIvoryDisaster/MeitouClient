@@ -1,0 +1,39 @@
+# Temporary: checks the Azure debug upload (variables, GitHub OIDC sign-in, container access) without building, by uploading a small
+# text file the same way nightly.yml's upload-debug job uploads the zips. Run it by hand from master; delete it once it passes.
+name: Azure upload test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  upload:
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Upload a test file
+        shell: bash
+        env:
+          STORAGE_ACCOUNT: ${{ vars.AZURE_STORAGE_ACCOUNT }}
+          DEBUG_CONTAINER: ${{ vars.AZURE_DEBUG_CONTAINER }}
+        run: |
+          set -euo pipefail
+          name="${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}/upload-test.txt"
+          echo "Azure upload test from ${GITHUB_SHA}" > upload-test.txt
+          az storage blob upload --auth-mode login --only-show-errors \
+            --account-name "$STORAGE_ACCOUNT" \
+            --container-name "$DEBUG_CONTAINER" \
+            --name "$name" \
+            --file upload-test.txt
+          echo "Uploaded \`${DEBUG_CONTAINER}/${name}\`" >> "$GITHUB_STEP_SUMMARY"
