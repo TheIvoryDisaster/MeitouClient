@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Rivalry Core (docs/modding-rivalry.md): a code-mod framework that inspects the player's setup and lets directors decide what the
+    world's factions do about it. Built against the game's assemblies, never copied: the game supplies them (docs/modding.md "Writing a mod").
+  -->
+
+  <PropertyGroup>
+    <AssemblyName>RivalryCore</AssemblyName>
+    <RootNamespace>Rivalry</RootNamespace>
+    <Version>0.1.0</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/Meitou.Core/Meitou.Core.csproj" Private="false" />
+    <ProjectReference Include="../../src/Meitou.Data/Meitou.Data.csproj" Private="false" />
+    <ProjectReference Include="../../src/Meitou.Simulation/Meitou.Simulation.csproj" Private="false" />
+    <ProjectReference Include="../../src/Meitou.Game/Meitou.Game.csproj" Private="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="meitou.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>
