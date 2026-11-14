@@ -253,7 +253,10 @@ public sealed class ModSetting
         double v = Math.Clamp(System.Convert.ToDouble(value, CultureInfo.InvariantCulture), Min, Max);
         v = Math.Clamp(Min + Math.Round((v - Min) / Step) * Step, Min, Max);
         if (type == typeof(int)) return (int)Math.Round(v);
-        return type == typeof(float) ? (float)v : Math.Round(v, 10);
+
+        // Separate returns: one ?: of a float and a double is a double, which a float property's setter refuses.
+        if (type == typeof(float)) return (float)v;
+        return Math.Round(v, 10);
     }
 
     /// <summary>
