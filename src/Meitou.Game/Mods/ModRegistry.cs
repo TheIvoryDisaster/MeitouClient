@@ -187,8 +187,10 @@ sealed class ModRegistry
     /// </summary>
     public void CheckItemUseFree(string record, ModRegistrations pending, string mod)
     {
-        if (_itemUseOwners.TryGetValue(record, out var owner)) throw new InvalidOperationException($"The use of item '{record}' is taken by mod '{owner}'.");
-        if (pending.ItemUses.ContainsKey(record)) throw new InvalidOperationException($"The use of item '{record}' is registered twice by mod '{mod}'.");
+        if (_itemUseOwners.TryGetValue(record, out var owner))
+            throw new InvalidOperationException($"The use of item '{record}' is taken by mod '{owner}'.");
+        if (pending.ItemUses.ContainsKey(record))
+            throw new InvalidOperationException($"The use of item '{record}' is registered twice by mod '{mod}'.");
     }
 
     /// <summary>

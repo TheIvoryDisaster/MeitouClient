@@ -126,8 +126,8 @@ public readonly record struct ItemUse(World World, CharacterId User, Items.ItemI
 public delegate bool ItemUseHandler(ItemUse use);
 
 /// <summary>
-/// What code mods add to the simulation (docs/modding.md): extra systems at anchors, dialogue codes and item uses. Filled once at startup, before the first
-/// world is built, and read by <see cref="StandardSystems.Build"/> for every world; never changed while a world runs.
+/// What code mods add to the simulation (docs/modding.md): extra systems at anchors, dialogue codes and item uses. Filled once at startup, before
+/// the first world is built, and read by <see cref="StandardSystems.Build"/> for every world; never changed while a world runs.
 /// </summary>
 public sealed class SimulationExtensions
 {
