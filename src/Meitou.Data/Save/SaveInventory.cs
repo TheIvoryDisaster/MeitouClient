@@ -139,6 +139,16 @@ public sealed class SaveItem
     public const string StolenFromKey = "meitou stolen from";
 
     /// <summary>
+    /// Meitou's string <see cref="ModTagKey"/>: a code mod's mark on the item (docs/modding.md "Item use"; empty: none).
+    /// </summary>
+    public string ModTag { get; init; } = "";
+
+    /// <summary>
+    /// The Meitou key of <see cref="ModTag"/>, written only when the tag is not empty (the original ignores it: keys are read by name).
+    /// </summary>
+    public const string ModTagKey = "meitou mod tag";
+
+    /// <summary>
     /// The record the item was last written as, so a handle known only once every character has one can be put on it.
     /// </summary>
     public FcsRecord? Written { get; private set; }
@@ -220,6 +230,7 @@ public static class SaveInventory
         Contents = contents,
         Source = r,
         StolenFrom = r.Strings.GetValueOrDefault(SaveItem.StolenFromKey),
+        ModTag = r.Strings.GetValueOrDefault(SaveItem.ModTagKey, ""),
     };
 
     /// <summary>
@@ -291,6 +302,8 @@ public static class SaveInventory
         item.OwnedBy?.Write(r, "ownedby");
         if (item.StolenFrom is { } stolenFrom) r.Strings[SaveItem.StolenFromKey] = stolenFrom;
         else r.Strings.Remove(SaveItem.StolenFromKey);
+        if (item.ModTag.Length > 0) r.Strings[SaveItem.ModTagKey] = item.ModTag;
+        else r.Strings.Remove(SaveItem.ModTagKey);
         r.Bools["in inventory"] = true;
         item.WrittenAs(r);
         return r;
